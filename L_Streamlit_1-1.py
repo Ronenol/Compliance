@@ -9,19 +9,18 @@ if not uploaded:
     st.info("Please upload the Excel file to get started.")
     st.stop()
 
-# 2. Read Flight + Crew sheets
+# 2. Read sheets (as strings)
 flights = pd.read_excel(uploaded, sheet_name="Flight", dtype=str)
 crew    = pd.read_excel(uploaded, sheet_name="Crew Currency", dtype=str)
 
-# 3. Normalize IDs
+# 3. Normalize flight IDs
 flights["flight id"] = flights["id"].str.lstrip("#")
 crew   ["flight id"] = crew["flight id"].str.lstrip("#")
 
-# 4. Merge in both date & aircraft type
+# 4. Merge in date, A/C type, and Flight type
 df = crew.merge(
-    flights[["flight id", "flt date", "a/c type"]],
-    on="flight id",
-    how="left"
+    flights[["flight id", "flt date", "a/c type", "type of flight"]],
+    on="flight id", how="left"
 )
 
 # 5. Parse & clean dates
@@ -34,44 +33,54 @@ if df.empty:
 # 6. Parse VFR times into timedeltas
 df["vfr td"] = pd.to_timedelta(df["vfr t"].fillna("0:00") + ":00", errors="coerce")
 
-# ─── New: Aircraft type filter ───
-all_types = sorted(df["a/c type"].dropna().unique())
-selected_types = st.sidebar.multiselect(
+# ─── A/C‐Type filter ───
+all_ac_types = sorted(df["a/c type"].dropna().unique())
+selected_ac = st.sidebar.multiselect(
     "Filter by A/C Type",
-    options=all_types,
-    default=all_types
+    options=all_ac_types,
+    default=all_ac_types
 )
-df = df[df["a/c type"].isin(selected_types)]
+df = df[df["a/c type"].isin(selected_ac)]
 
-# 7. Compute calendar bounds
+# ─── Flight‐Type filter ───
+all_flight_types = sorted(df["type of flight"].dropna().unique())
+selected_ft = st.sidebar.multiselect(
+    "Filter by Type of Flight",
+    options=all_flight_types,
+    default=all_flight_types
+)
+df = df[df["type of flight"].isin(selected_ft)]
+
+# 7. Date‐range pickers
 min_date = df["flt date"].min().date()
 max_date = df["flt date"].max().date()
 
-# 8. Date pickers
 start_date = st.sidebar.date_input(
-    "Start date",
-    value=min_date,
-    min_value=min_date,
-    max_value=max_date
+    "Start date", value=min_date,
+    min_value=min_date, max_value=max_date
 )
 end_date = st.sidebar.date_input(
-    "End date",
-    value=max_date,
-    min_value=min_date,
-    max_value=max_date
+    "End date", value=max_date,
+    min_value=min_date, max_value=max_date
 )
 if start_date > end_date:
     st.sidebar.error("Start date must be on or before End date.")
     st.stop()
 
-# 9. Filter by date
-mask = (df["flt date"].dt.date >= start_date) & (df["flt date"].dt.date <= end_date)
+# 8. Filter by date window
+mask = (
+    (df["flt date"].dt.date >= start_date) &
+    (df["flt date"].dt.date <= end_date)
+)
 df = df.loc[mask]
+if df.empty:
+    st.warning("No flights match the selected filters & dates.")
+    st.stop()
 
-# 10. Aggregate VFR time per pilot
+# 9. Aggregate VFR time per pilot
 vfr_totals = df.groupby("crew")["vfr td"].sum()
 
-# 11. Format for display
+# 10. Format for display
 def fmt(td):
     hrs = td.components.days * 24 + td.components.hours
     mins = td.components.minutes
@@ -82,8 +91,8 @@ display = pd.DataFrame({
     "Hours (dec)":    vfr_totals.dt.total_seconds().div(3600).round(2)
 }).sort_values("Hours (dec)", ascending=False)
 
-# 12. Show outputs
-st.header(f"VFR Time per Pilot\n({start_date} → {end_date})")
+# 11. Show table & bar chart
+st.header(f"VFR Time per Pilot ({start_date} → {end_date})")
 st.dataframe(display[["Total VFR Time"]])
 
 st.subheader("VFR Time (decimal hours)")
