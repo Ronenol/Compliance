@@ -1,1 +1,5 @@
-streamlit\npandas\nxlsxwriter\nfpdf\nopenpyxl
+streamlit
+pandas
+xlsxwriter
+fpdf
+openpyxl
